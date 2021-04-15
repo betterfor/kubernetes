@@ -1,0 +1,108 @@
+## 项目结构
+
+| 源码目录      | 说明                                                         |
+| ------------- | ------------------------------------------------------------ |
+| api/          | 存放OpenAPI/Swagger的spec文件，包括JSON、Protocol的定义等    |
+| build/        | 存放与构建相关的脚本                                         |
+| cmd/          | 存放可执行文件的入口代码，每个可执行文件都会对应一个main函数 |
+| docs/         | 存放设计或用户使用文档                                       |
+| hack/         | 存放与构建、测试等相关的脚本                                 |
+| pkg/          | 存放核心库代码，可被项目内部或外部直接引用                   |
+| plugin/       | 存放kubernetes插件代码目录，例如认证、授权等相关插件         |
+| staging/      | 存放部分核心库的暂存目录                                     |
+| test/         | 存放测试工具及测试数据                                       |
+| third-party/  | 存放第三方工具、代码或其他组件                               |
+| translations/ | 存放i18n(国际化)语言包的相关文件                             |
+| vendor/       | 存放项目依赖的库代码，一般为第三方仓库代码                   |
+
+## cmd内组件的main函数
+
+main函数定义了程序运行的周期，包括从进程启动、运行到退出的过程。
+
+Start -> rand.Seed -> app.NewCommand() (包括参数、选项的初始化) -> logs.InitLogs() -> command.Execute() -> opts.Complete() -> opts.Validate() -> Run() -> stop chan -> End
+
+- rand.Seed: 组件中的全局随机数生成对象
+- app.NewCommand: 实例化命令行参数。通过flags对命令行参数进行解析并存储至Options对象中
+- logs.InitLogs: 实例化日志对象，用于日志管理
+- command.Execute: 组件进程运行的逻辑。运行前通过Complete函数填充默认参数，通过Validate函数验证所有参数，最后通过Run函数持久运行。只有当进程收到退出信号时，进程才会退出。
+
+## 代码生成器
+
+| 代码生成器     | 说明                                                         |
+| -------------- | ------------------------------------------------------------ |
+| conversion-gen | 自动生成Convert函数的代码生成器，用于资源对象的版本转换函数  |
+| deepcopy-gen   | 自动生成DeepCopy函数的代码生成器，用于资源对象的深复制函数   |
+| defaulter-gen  | 自动生成Defaulter函数的代码生成器，用于资源对象的默认值函数  |
+| go-bindata     | 第三方工具，能够将静态资源文件嵌入Go语言中                   |
+| openapi-gen    | 自动生成OpenAPI定义文件（OpenAPI Definition File）的代码生成器 |
+
+代码生成器通过Tags(标签)来识别一个包是否需要生成代码及确定生成代码的方式。
+
+- 全局Tags：定义在每个包的`doc.go`文件中，对整个包中的类型自动生成代码。
+
+  定义在`pkg/apis/<group>/<version>/doc.go`中
+
+  ```go
+  // +k8s:deepcopy-gen=package
+  // +k8s:conversion-gen=k8s.io/kubernetes/pkg/apis/abac
+  // +k8s:openapi-gen=true
+  // +k8s:defaulter-gen=TypeMeta
+  
+  // +groupName=abac.authorization.kubernetes.io
+  package v1beta1 // import "k8s.io/kubernetes/pkg/apis/abac/v1beta1"
+  ```
+
+  全局Tags告诉`deepcopy-gen`代码生成器为该包中的每个类型自动生成`DeepCopy`函数。其中`// +groupName`定义了资源组名称，资源组名称一般使用域名形式命名。
+
+- 局部Tags: 定义在Go语言的类型声明尚房，只对特定的类型自动生成代码。
+
+  例如：`/pkg/apis/core/types.go`
+  
+  ```go
+  // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+  
+  // PersistentVolume struct captures the details of the implementation of PV storage
+  type PersistentVolume struct {
+  	metav1.TypeMeta
+  	// +optional
+  	metav1.ObjectMeta
+  
+  	//Spec defines a persistent volume owned by the cluster
+  	// +optional
+  	Spec PersistentVolumeSpec
+  
+  	// Status represents the current information about persistent volume.
+  	// +optional
+  	Status PersistentVolumeStatus
+  }
+  ```
+  
+  局部Tags定义在`PersistentVolume`资源类型的上方，定义了该类型的代码生成器`deepcopy-gen`为这个资源类型自动生成`DeepCopy`函数。
+  
+  
+
+#### 1、DeepCopy-gen代码生成器
+
+自动生成`DeepCopy`函数的代码生成器。给定一个包的目录路径作为输入源，它可以为其生成`DeepCopy`相关的函数，这些函数可以有效地执行每种类型的深复制操作。
+
+为每个包生成`DeepCopy`相关的函数时，其`Tags`形式如下：
+
+```go
+// +k8s:deepcopy-gen=package
+```
+
+当为单个类型生成`DeepCopy`相关函数时，其`Tags`形式如下：
+
+```go
+// +k8s:deepcopy-gen=true
+```
+
+为整个包生成DeepCopy相关函数时，可以忽略单个类型，其`Tags`形式如下：
+
+```go
+// +k8s:deepcopy-gen=false
+```
+
+有时在`kubernetes`源码里会看到`deepcopy-gen`的`Tags`被定义成`runtime.Object`，这时`deepcopy-gen`会为该类型生成返回值为`runtime.Object`类型的`DeepCopyObject`函数。
+
+[deep-copy源码](https://github.com/kubernetes/gengo/tree/master/examples/deepcopy-gen)
