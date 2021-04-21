@@ -995,16 +995,16 @@ type GroupVersionForDiscovery struct {
 	Version string `json:"version" protobuf:"bytes,2,opt,name=version"`
 }
 
-// APIResource specifies the name of a resource and whether it is namespaced.
+// APIResource 定义了资源的数据结构
 type APIResource struct {
-	// name is the plural name of the resource.
+	// 资源名称
 	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
-	// singularName is the singular name of the resource.  This allows clients to handle plural and singular opaquely.
-	// The singularName is more correct for reporting status on a single item and both singular and plural are allowed
-	// from the kubectl CLI interface.
+	// 资源的单数名称。必须由小写字母组成，可以使用单数或复数形式。单数形式更适用于形容单个资源，kubectl cli单复数都行。
+	// 例如Pod资源的单数是pod，复数是pods
 	SingularName string `json:"singularName" protobuf:"bytes,6,opt,name=singularName"`
-	// namespaced indicates if a resource is namespaced or not.
+	// 资源是否拥有所属的命名空间
 	Namespaced bool `json:"namespaced" protobuf:"varint,2,opt,name=namespaced"`
+	// 资源所在的资源组名称
 	// group is the preferred group of the resource.  Empty implies the group of the containing resource list.
 	// For subresources, this may have a different value, for example: Scale".
 	Group string `json:"group,omitempty" protobuf:"bytes,8,opt,name=group"`
@@ -1016,7 +1016,7 @@ type APIResource struct {
 	// verbs is a list of supported kube verbs (this includes get, list, watch, create,
 	// update, patch, delete, deletecollection, and proxy)
 	Verbs Verbs `json:"verbs" protobuf:"bytes,4,opt,name=verbs"`
-	// shortNames is a list of suggested short names of the resource.
+	// 资源的简称，例如 StatefulSets 的简称是sts
 	ShortNames []string `json:"shortNames,omitempty" protobuf:"bytes,5,rep,name=shortNames"`
 	// categories is a list of the grouped resources this resource belongs to (e.g. 'all')
 	Categories []string `json:"categories,omitempty" protobuf:"bytes,7,rep,name=categories"`

@@ -164,3 +164,293 @@ $  ./_output/bin/deepcopy-gen --v 1 --logtostderr -i "k8s.io/kubernetes/pkg/apis
 ```
 
 [deep-copy源码](https://github.com/kubernetes/gengo/tree/master/examples/deepcopy-gen)
+
+## kubernetes核心数据结构
+
+- Group(资源组):在Kubernetes API Server中也可以被称为APIGroup
+- Version(版本资源):在Kubernetes API Server中也可以被称为APIVersions
+- Resource(资源):在Kubernetes API Server中也可以被称为APIResource
+- Kind(资源种类):描述Resource的种类，与Resource为同一级别
+
+完整的表现形式为<group>/<version>/<resource>/<subresource>.例如Deployment资源为例，其完整表现形式为`apps/v1/deployments/status`.
+
+可以通过Group、Version、Resource结构来明确标识一个资源的资源组名称、资源版本和资源名称。
+
+代码路径：[staging\src\k8s.io\apimachinery\pkg\runtime\schema\group_version.go#L96]
+
+```go
+type GroupVersionResource struct {
+	Group    string
+	Version  string
+	Resource string
+}
+```
+以Deployment资源为例，资源信息描述信息如下：
+```go
+schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
+```
+
+### Group(资源组)
+
+- 将众多资源按照功能划分成不同的资源组，并允许单独启用/禁用资源组。当然也可以单独启用/禁用资源组中的资源。
+- 支持不同资源组中拥有不同的资源版本。方便组内的资源根据版本进行迭代升级
+- 支持同名的资源种类（Kind）存在于不同的资源组内
+- 资源组与资源版本通过Kubernetes API Server对外暴露，允许开发者通过HTTP协议进行交互并通过动态客户端（即DynamicClient）进行资源发现
+- 支持CRD自定义资源扩展
+- 用户交互简单，例如在使用kubectl命令行工具时，可以不填写资源组名称
+
+在当前kubernetes系统中，支持两类资源，分别是拥有组名的资源组合没有组名的资源组
+- 拥有组名的资源组：<group>/<version>/<resource>,apps/v1/deployments，它的HTTP Path为/apis/apps/v1/deployments
+- 没有组名的资源组：被称为Core Groups(核心资源组),<version>/<resource>,/v1/pods，它的HTTP Path为/api/v1/pods
+
+### Version(资源版本)
+
+Alpha->Beta->Stable.
+- Alpha:一般用于内部测试,可能存在很多缺陷和漏洞，随时可能放弃支持该版本。版本名称一般为v1alpha1,v1alpha2,v2alpha1
+- Beta:相对稳定版本，该版本已经修复了大部分不完善之处，但仍可能存在缺陷和漏洞，当功能迭代时，改版本会有较小变化但不会删除。处于Beta版本功能是开启状态。版本名称一般为v1beta1,v1beta2,v2beta1
+- Stable:基本形成产品并达到一定的成熟度，可稳定运行,不会被删除。版本名称一般为v1,v2,v3
+
+下面以apps为例：
+- v1: ControllerRevisions,DaemonSets,Deployments,ReplicaSets,StatefulSets
+- v1beta1: ControllerRevisions,Deployments,StatefulSets
+- v1beta2: ControllerRevisions,DaemonSets,Deployments,ReplicaSets,StatefulSets
+
+### Resource(资源)
+
+kubernetes系统虽然有相当复杂和众多的功能，但它本质上是一个资源控制系统---管理、调度资源并维护资源的状态。
+
+一个资源被实例化后会表达一个资源对象（即Resource Object）。在kubernetes系统中定义并运行各式各样的资源对象。
+所有的资源对象都是`Entity`（实体）。
+- 持久性实体(Persistent Entity)：在资源对象被创建后，kubernetes会持久确保该资源对象存在。大部分资源对象属于持久性实体，例如Deployment资源对象
+- 短暂性实体(Ephemeral Entity)：在资源对象被创建后，如果出现故障或调度失败，不会重新创建该资源对象，例如Pod资源对象
+
+### 资源外部版本和内部版本
+
+kubernetes资源代码定义在`pkg/apis`目录下。例如，Deployment资源外部版本表现形式为`apps/v1`，内部版本表现形式为`apps/_internal`。
+
+- External Object：外部版本资源对象。外部版本用于对外暴露给用户请求的接口所使用的资源对象。
+例如，用户在通过YAML或JSON格式的描述文件创建资源对象时，所使用的的是外部资源对象。外部版本代码定义在`pkg/apis/<group>/<version>`
+- Internal Object：内部版本资源对象。内部版本不对外暴露，仅在kubernetes api server内部使用。
+内部版本用于多资源版本的切换。例如v1beta1->internal->v1。内部版本代码定义在`pkg/apis/<group>`
+
+Pod资源外部版本代码定义如下:[staging/src/k8s.io/api/core/v1/types.go]
+```go
+type Pod struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	Spec PodSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+	Status PodStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
+}
+```
+Pod资源内部版本代码定义如下:[pkg/apis/core/types.go]
+```go
+type Pod struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	Spec PodSpec
+	Status PodStatus
+}
+```
+
+#### 资源代码定义
+
+资源内部版本定义了所支持的资源类型(types.go)，资源校验方法(validation.go)，资源注册值资源注册表的方法(install/install.go)等。
+资源外部版本定义了资源的转换方法(conversion.go),资源的默认值(defaults.go)等。
+
+以Deployment资源为例，内部版本定义在`pkg/apis/apps`目录下。
+```bash
+fuzzer
+install：把当前资源组下的所有资源注册到资源注册表中
+v1      -|
+v1beta1 -|  定义了资源组下拥有的资源版本的资源（即外部版本）
+v1beta2 -|
+validation：定义了资源的验证方法
+doc.go：GoDoc文件，定义了当前包的注释信息
+register.go：定义了资源组、资源版本即资源的注册信息
+types.go ：定义了在当前资源、资源版本下所支持的资源类型
+zz_generated.deepcopy.go：定义了资源的深复制操作，由代码生成器生成
+```
+
+每一个kubernetes资源目录，都通过`register.go`代码文件定义所属的资源组和资源版本，内部资源版本对象通过`runtime.APIVersionInternal`(即__internal)标识。
+[pkg/apis/apps/register.go]
+```go
+// GroupName is the group name use in this package
+const GroupName = "apps"
+
+// SchemeGroupVersion is group version used to register these objects
+var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: runtime.APIVersionInternal}
+```
+
+每一个kubernetes资源目录，都通过`types.go`代码文件定义在当前资源组/资源版本下所支持的资源类型。
+
+资源外部版本定义在`pkg/apis/apps/{v1,v1beta1,v1beta2}`
+```bash
+conversion.go：定义了资源的转换函数（默认转换函数），并将默认转换函数注册到资源注册表中
+defaults.go：定义了资源的默认值函数，并将默认值函数注册到资源注册表中
+doc.go
+register.go
+zz_generated.conversion.go：定义资源的转换函数（自动生成的转换函数），并将生成的转换函数注册到资源注册表中。该文件由代码生成器自动生成
+zz_generated.defaults.go：定义了资源的默认值函数（自动生成的转换函数），并将生成的转换函数注册到资源注册表中。该文件由代码生成器自动生成
+```
+
+外部版本资源对象通过版本资源（Alpha，Beta，Stable）标识，
+```go
+// GroupName is the group name use in this package
+const GroupName = "apps"
+
+// SchemeGroupVersion is group version used to register these objects
+var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1beta1"}
+```
+
+#### 将资源注册到资源注册表中
+
+在每一个kubernetes资源组目录中，都拥有一个`install/install.go`代码文件，它负责将资源信息注册到资源注册表中(Scheme)中。
+```go
+func init() {
+	Install(legacyscheme.Scheme)
+}
+
+// Install registers the API group and adds types to a scheme
+func Install(scheme *runtime.Scheme) {
+	utilruntime.Must(apps.AddToScheme(scheme))
+	utilruntime.Must(v1beta1.AddToScheme(scheme))
+	utilruntime.Must(v1beta2.AddToScheme(scheme))
+	utilruntime.Must(v1.AddToScheme(scheme))
+	utilruntime.Must(scheme.SetVersionPriority(v1.SchemeGroupVersion, v1beta2.SchemeGroupVersion, v1beta1.SchemeGroupVersion))
+}
+```
+
+`legacyscheme.Scheme`是`kube-apiserver`组件的全局注册表，kubernetes的所有资源信息都交给资源注册表统一管理。
+`apps.AddToScheme`函数注册`apps`资源组内部版本资源。`v1beta1.AddToScheme`函数注册`apps`资源组外部版本的资源。
+`scheme.SetVersionPriority`函数注册资源组的版本顺序，排在前面的为资源首选版本。
+
+#### 资源首选版本
+
+首选版本(Preferred Version)，也称为优选版本(Priority Version),一个资源组下拥有多个资源版本，例如apps资源组拥有v1，v1beta1,v1beta2等资源版本。
+当我们使用apps资源组下的Deployment资源时，在一些场景下，如不指定资源版本，则使用该资源的首选版本。
+
+当通过注册表`scheme.PreferredVersionAllGroups`函数获取所有资源组下的首选版本时，将位于最前面的资源版本作为首选版本。
+[staging/src/k8s.io/apimachinery/pkg/runtime/scheme.go]
+```go
+func (s *Scheme) PreferredVersionAllGroups() []schema.GroupVersion {
+	ret := []schema.GroupVersion{}
+	for group, versions := range s.versionPriority {
+		for _, version := range versions {
+			ret = append(ret, schema.GroupVersion{Group: group, Version: version})
+			break
+		}
+	}
+	...
+
+	return ret
+}
+```
+
+- `scheme.PrioritizedVersionsForGroup`获取指定资源组的资源版本，按照优先顺序返回
+- `scheme.PrioritizedVersionsAllGroups`获取所有资源组的资源版本，按照优先顺序返回
+
+### 资源操作方法
+
+在kubernetes系统中，针对每一个资源都有一定的操作方法(即Verbs)。
+
+资源操作方法可以通过`metav1.Verbs`进行描述,[staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go]
+```go
+type Verbs []string
+
+func (vs Verbs) String() string {
+	return fmt.Sprintf("%v", []string(vs))
+}
+``` 
+
+不同的资源拥有不同的操作方法，例如针对Pod资源对象与pod/logs子资源对象，pod资源对象有create、delete、deletecollection、get、list、patch、update、watch等，而logs只有get操作方法。
+
+资源对象的操作方法与存储(Storage)相关联，增删改查实际上是针对存储的操作，定义在[staging/src/k8s.io/apiserver/pkg/registry/rest]
+
+[staging/src/k8s.io/apiserver/pkg/registry/rest/rest.go]
+```go
+type Getter interface {
+	Get(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error)
+}
+type Creater interface {
+	New() runtime.Object
+	Create(ctx context.Context, obj runtime.Object, createValidation ValidateObjectFunc, options *metav1.CreateOptions) (runtime.Object, error)
+}
+```
+
+可以认为如果某个资源对象在存储(Storage)实现方法Get,New,Create，就认为该资源对象拥有了get和create方法。
+
+以Pod资源对象为例，Pod资源对象的存储实现了以上接口的方法，Pod资源对象集成了`genericregistry.Store`，该对象可以管理存储的增删改查。
+
+[pkg/registry/core/pod/storage/storage.go]
+```go
+type PodStorage struct {
+	Pod                 *REST
+	Binding             *BindingREST
+	LegacyBinding       *LegacyBindingREST
+	Eviction            *EvictionREST
+	Status              *StatusREST
+	EphemeralContainers *EphemeralContainersREST
+	Log                 *podrest.LogREST
+	Proxy               *podrest.ProxyREST
+	Exec                *podrest.ExecREST
+	Attach              *podrest.AttachREST
+	PortForward         *podrest.PortForwardREST
+}
+type REST struct {
+	*genericregistry.Store
+	proxyTransport http.RoundTripper
+}
+```
+[staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go]
+```go
+func (e *Store) Create(ctx context.Context, obj runtime.Object, createValidation rest.ValidateObjectFunc, options *metav1.CreateOptions) (runtime.Object, error) {
+    ...
+}
+```
+[pkg/registry/core/pod/rest/log.go]
+```go
+func (r *LogREST) Get(ctx context.Context, name string, opts runtime.Object) (runtime.Object, error) {
+    ...
+}
+```
+
+#### 资源与命名空间
+
+kubernetes系统支持命名空间(Namespace)，其用来解决kubernetes集群中资源对象过多导致管理复杂的问题。
+每个命名空间相当于一个“虚拟集群”，不同命名空间之间可以进行隔离，当然也可以进行某种方式跨命名空间通信。
+
+kubernetes系统默认内置4个命名空间
+- default：所有未指定命名空间的资源对象都会被分配到该命名空间
+- kube-system：所有由kubernetes系统创建的资源对象都会被分配给该命名空间
+- kube-public：此命名空间下的资源对象可以被所有人访问（包括未认证用户）
+- kube-node-lease：此命名空间下存放来自接地那的心跳记录（节点租约信息）
+
+### runtime.Object类型基石
+
+kubernetes Runtime在[staging/src/k8s.io/apimachinery/pkg/runtime]中实现，提供了通用资源类型`runtime.Object`。
+
+Kubernetes上所有的资源对象(Resource Object)实际上就是一种Go语言的Struct类型，相当于一种数据结构，他们都有一个共同的结构叫`runtime.Object`。
+`runtime.Object`被设计为Interface接口类型，作为资源对象的通用资源对象。
+
+以资源对象Pod为例，该资源对象可以转换成`runtime.Object`，也可以从`runtime.Object`通用资源对象转成Pod资源对象。
+[staging/src/k8s.io/apimachinery/pkg/runtime/interfaces.go]
+```go
+type Object interface {
+    // 设置并返回GroupVersionKind
+	GetObjectKind() schema.ObjectKind
+    // 用于深复制当前资源对象并返回
+	DeepCopyObject() Object
+}
+```
+[staging/src/k8s.io/apimachinery/pkg/runtime/schema/interfaces.go]
+```go
+type ObjectKind interface {
+	SetGroupVersionKind(kind GroupVersionKind)
+	GroupVersionKind() GroupVersionKind
+}
+```
+
+kubernetes的每一个资源对象都嵌入了`metav1.TypeMeta`类型，而`metav1.TypeMeta`类型都实现了`GetObjectKind`方法，所以资源对象拥有该方法。
+另外，kubernetes的每一个资源都实现了`DeepCopyObject`方法，该方法一般被定义在`zz_generated.deepcopy.go`文件中。因此，可以认为该资源对象能够转换成`runtime.Object`。
+
+#### Unstructured数据
