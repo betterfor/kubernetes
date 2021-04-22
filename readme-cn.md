@@ -454,3 +454,369 @@ kubernetes的每一个资源对象都嵌入了`metav1.TypeMeta`类型，而`meta
 另外，kubernetes的每一个资源都实现了`DeepCopyObject`方法，该方法一般被定义在`zz_generated.deepcopy.go`文件中。因此，可以认为该资源对象能够转换成`runtime.Object`。
 
 #### Unstructured数据
+
+数据可以分成结构化数据(Structured Data)和非结构化数据(Unstructured Data).
+
+1、结构化数据，例如JSON数据，需要创建一个`struct`数据结构，然后进行反序列化，将属性映射到`struct`中。
+
+2、非结构化数据就是无法预知数据结构类型或属性名称不明确的，其也无法通过预订的`struct`数据结构来序列化或反序列化。
+无法预知数据类型，因为Go语言是强类型，需要预先知道数据类型，Go语言在处理JSON数据时不如动态语言那样便捷，可以通过`map[string]interface{}`来处理。
+```go
+if data,ok:=result["data"].(string);ok {
+    fmt.Println(data)
+}
+```
+使用interface字段时，通过Go语言断言的方式进行类型转换。
+
+3、kubernetes非结构化数据处理
+
+[staging/src/k8s.io/apimachinery/pkg/runtime/interfaces.go]
+```go
+type Unstructured interface {
+	Object
+	// NewEmptyInstance returns a new instance of the concrete type containing only kind/apiVersion and no other data.
+	// This should be called instead of reflect.New() for unstructured types because the go type alone does not preserve kind/apiVersion info.
+	NewEmptyInstance() Unstructured
+	// UnstructuredContent returns a non-nil map with this object's contents. Values may be
+	// []interface{}, map[string]interface{}, or any primitive type. Contents are typically serialized to
+	// and from JSON. SetUnstructuredContent should be used to mutate the contents.
+	UnstructuredContent() map[string]interface{}
+	// SetUnstructuredContent updates the object content to match the provided map.
+	SetUnstructuredContent(map[string]interface{})
+	// IsList returns true if this type is a list or matches the list convention - has an array called "items".
+	IsList() bool
+	// EachListItem should pass a single item out of the list as an Object to the provided function. Any
+	// error should terminate the iteration. If IsList() returns false, this method should return an error
+	// instead of calling the provided function.
+	EachListItem(func(Object) error) error
+}
+```
+[staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/unstructured/unstructured.go]
+```go
+type Unstructured struct {
+	Object map[string]interface{}
+}
+```
+
+### Scheme资源注册表AddKnownTypes
+
+kubernetes系统中的所有资源类型都已经注册到`Scheme`资源注册表中，其是一个内存型的资源注册表，特点：
+- 支持注册多重资源类型，包括内部版本和外部版本
+- 支持多种版本转换机制
+- 支持不同资源的序列化和反序列化
+
+Scheme资源注册表支持两种资源类型(Type)的注册：
+- UnversionedType：无版本资源类型，这是一个早期kubernetes系统中的概念，主要应用于某些没有版本的资源类型，该类型的资源对象不需要进行转化。通过`scheme.AddUnversionedTypes`方法注册
+- KnownType：目前kubernetes最常用的资源类型。通过`scheme.AddKnownTypes`方法注册
+
+#### Scheme资源注册表数据结构
+
+[staging/src/k8s.io/apimachinery/pkg/runtime/scheme.go]
+```go
+type Scheme struct {
+    // 存储GVK与Type的映射关系
+	gvkToType map[schema.GroupVersionKind]reflect.Type
+    // 存储Type与GVK的映射关系，一个Type会对应一个或多个GVK
+	typeToGVK map[reflect.Type][]schema.GroupVersionKind
+    // 存储UnversionedType与GVK的映射关系
+	unversionedTypes map[reflect.Type]schema.GroupVersionKind
+	// 存储Kind（资源种类）名称与UnversionedType的映射关系
+	unversionedKinds map[string]reflect.Type
+    ...
+}
+```
+
+`Scheme`资源注册表通过Go语言的map结构实现映射关系，这些映射关系可以实现高效的正向和反向检索，从`Scheme`资源注册表中检索某个GVK的Type，它的时间复杂度为O(1)
+
+```go
+package main
+
+import (
+	appsv1 "k8s.io/api/apps/v1"
+    corev1 "k8s.io/api/core/v1"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/apimachinery/pkg/runtime"
+    "k8s.io/apimachinery/pkg/runtime/schema"
+)
+
+func main() {
+	// KnowType external
+	coreGV := schema.GroupVersion{Group: "",Version: "v1"}
+	extensionsGV := schema.GroupVersion{Group: "extensions",Version:"v1beta1"}
+	// KnowType internal
+	coreInternalGV := schema.GroupVersion{Group: "",Version: runtime.APIVersionInternal}
+	// UnversionedType
+	Unversioned := schema.GroupVersion{Group: "",Version:"v1"}
+
+	scheme := runtime.NewScheme()
+	scheme.AddKnownTypes(coreGV,&corev1.Pod{})
+	scheme.AddKnownTypes(extensionsGV, &appsv1.DaemonSet{})
+	scheme.AddKnownTypes(coreInternalGV, &corev1.Pod{})
+	scheme.AddKnownTypes(Unversioned, &metav1.Status{})
+}
+```
+
+在上述代码中，首先定义了两种类型的GV（资源组、资源版本），KnowType类型有coreGV、extensionsGV、coreInternalGV对象，其中coreInternalGV对象输入内部版本，而UnversionedType类型有Unversioned对象。
+
+通过`runtime.NewScheme()`实例化一个新的`Scheme`资源注册表。注册资源类型到`Scheme`，我们往`Scheme`资源注册表分别注册了Pod、DaemonSet、Pod（内部版本）、Status（无版本资源）类型对象。
+那么这些类型资源的映射关系如下：
+- gvkToType： /v1,Kind=Pod:v1.Pod ; extensions/v1beta1,Kind=DaemonSet:v1.DaemonSet  ; /_internal,Kind=Pod:v1.Pod ; /v1,Kind=Status:v1.Status
+- typeToGVK: v1.Status:[/v1,Kind=Status] ; v1.Pod:[/v1,Kind=Pod,/_internal,Kind=Pod] ; v1.DaemonSet:[extensions/v1beta1,Kind=DaemonSet]
+- unversionedTypes: /v1,Kind=Status:v1.Status
+- unversionedKinds: Status:v1.Status
+
+另外，通过`scheme.AddUnversionedTypes`方法注册时，会同时存在4个map结构中
+```go
+func (s *Scheme) AddUnversionedTypes(version schema.GroupVersion, types ...Object) {
+	s.addObservedVersion(version)
+    // 这里会注册AddKnownTypes
+	s.AddKnownTypes(version, types...)
+	for _, obj := range types {
+		t := reflect.TypeOf(obj).Elem()
+		gvk := version.WithKind(t.Name())
+		s.unversionedTypes[t] = gvk
+		if old, ok := s.unversionedKinds[gvk.Kind]; ok && t != old {
+			panic(fmt.Sprintf("%v.%v has already been registered as unversioned kind %q - kind name must be unique in scheme %q", old.PkgPath(), old.Name(), gvk, s.schemeName))
+		}
+		s.unversionedKinds[gvk.Kind] = t
+	}
+}
+```
+
+#### 资源注册表注册方法
+
+- scheme.AddUnversionedTypes：注册UnversionedType资源类型
+- scheme.AddKnownTypes：注册KnownType资源类型
+- scheme.AddKnownTypeWithName：注册KnownType资源类型，须指定资源的Kind资源种类名称
+
+以`scheme.AddKnownTypes`方法为例，在注册资源类型时，无须指定Kind名称，而是通过reflect机制获取资源类型的名称作为资源类型名称。
+[staging/src/k8s.io/apimachinery/pkg/runtime/scheme.go]
+```go
+func (s *Scheme) AddKnownTypes(gv schema.GroupVersion, types ...Object) {
+	s.addObservedVersion(gv)
+	for _, obj := range types {
+		t := reflect.TypeOf(obj)
+		if t.Kind() != reflect.Ptr {
+			panic("All types must be pointers to structs.")
+		}
+		t = t.Elem()
+		s.AddKnownTypeWithName(gv.WithKind(t.Name()), obj)
+	}
+}
+```
+
+#### 资源注册表查询方法
+
+- scheme.KnownTypes：查询注册表中指定GV下的资源类型
+- scheme.AllKnownTypes：查询注册表中所有GVK下的资源类型
+- scheme.ObjectKinds：查询资源对象所对应的GVK，一个资源对象可能存在多个GVK
+- scheme.New：查询GVK所对应的资源对象
+- scheme.IsGroupRegistered：判断指定的资源组是否已经注册
+- scheme.IsVersionRegistered：判断指定的GV是否已经注册
+- scheme.Recognizes：判断指定的GVK是否已经注册
+- scheme.IsUnversioned：判断指定的资源对象是否属于UnversionedType类型
+
+### Codec编解码器
+
+先了解一下Codec编码器与Serializer序列化器之间的差异
+- Serializer：序列化器，包含序列化操作与反序列化操作。序列化操作是将数据（例如数组、对象或结构体等）转换为字符串的过程，反序列化操作是将字符串转换为数据的过程，因此可以轻松的维护数据结构并存储或传输数据。
+- Codec：编解码器，包含编码器和解码器。编解码器是一个通用术语，指的是可以表示数据的任何格式，或者将数据转换为特定格式的过程。所以，可以将Serializer序列化器理解为Codec编解码器的一种。
+
+[staging/src/k8s.io/apimachinery/pkg/runtime/interfaces.go]
+```go
+type Codec Serializer
+
+type Serializer interface {
+	Encoder
+	Decoder
+}
+type Decoder interface {
+	Decode(data []byte, defaults *schema.GroupVersionKind, into Object) (Object, *schema.GroupVersionKind, error)
+}
+type Encoder interface {
+	Encode(obj Object, w io.Writer) error
+	Identifier() Identifier
+}
+```
+
+从Codec编解码器通用接口的定义可看出，Serializer序列化器属于Codec编解码器的一种，这是因为每种序列化器都实现了`Encoder`和`Decoder`方法。
+我们可以认为，只要实现了`Encoder`和`Decoder`方法的数据结构，就是序列化器。
+kubernetes目前支持3种主要的序列化器：
+- jsonSerializer：JSON格式序列化/反序列化器，使用`application/json`作为标识
+- yamlSerializer：YAML格式序列化/反序列化器，使用`application/yaml`作为标识
+- protobufSerializer：Protobuf格式序列化/反序列化器，使用`application/vnd.kubernetes.protobuf`作为标识
+
+#### Codec编解码实例化
+
+[staging/src/k8s.io/apimachinery/pkg/runtime/serializer/codec_factory.go]
+```go
+func newSerializersForScheme(scheme *runtime.Scheme, mf json.MetaFactory, options CodecFactoryOptions) []serializerType {
+	jsonSerializer := json.NewSerializerWithOptions(
+		mf, scheme, scheme,
+		json.SerializerOptions{Yaml: false, Pretty: false, Strict: options.Strict},
+	)
+	jsonSerializerType := serializerType{
+		AcceptContentTypes: []string{runtime.ContentTypeJSON},
+		ContentType:        runtime.ContentTypeJSON,
+		FileExtensions:     []string{"json"},
+		EncodesAsText:      true,
+		Serializer:         jsonSerializer,
+
+		Framer:           json.Framer,
+		StreamSerializer: jsonSerializer,
+	}
+	...
+
+	yamlSerializer := json.NewSerializerWithOptions(
+		mf, scheme, scheme,
+		json.SerializerOptions{Yaml: true, Pretty: false, Strict: options.Strict},
+	)
+	protoSerializer := protobuf.NewSerializer(scheme, scheme)
+	protoRawSerializer := protobuf.NewRawSerializer(scheme, scheme)
+
+	serializers := []serializerType{
+		jsonSerializerType,
+		{
+			AcceptContentTypes: []string{runtime.ContentTypeYAML},
+			ContentType:        runtime.ContentTypeYAML,
+			FileExtensions:     []string{"yaml"},
+			EncodesAsText:      true,
+			Serializer:         yamlSerializer,
+		},
+		{
+			AcceptContentTypes: []string{runtime.ContentTypeProtobuf},
+			ContentType:        runtime.ContentTypeProtobuf,
+			FileExtensions:     []string{"pb"},
+			Serializer:         protoSerializer,
+
+			Framer:           protobuf.LengthDelimitedFramer,
+			StreamSerializer: protoRawSerializer,
+		},
+	}
+    ...
+	return serializers
+}
+```
+
+序列化操作[staging/src/k8s.io/apimachinery/pkg/runtime/serializer/json/json.go]
+```go
+func (s *Serializer) Encode(obj runtime.Object, w io.Writer) error {
+	if co, ok := obj.(runtime.CacheableObject); ok {
+		return co.CacheEncode(s.Identifier(), s.doEncode, w)
+	}
+	return s.doEncode(obj, w)
+}
+
+func (s *Serializer) doEncode(obj runtime.Object, w io.Writer) error {
+	if s.options.Yaml {
+		json, err := caseSensitiveJSONIterator.Marshal(obj)
+		if err != nil {
+			return err
+		}
+		data, err := yaml.JSONToYAML(json)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	}
+
+	if s.options.Pretty {
+		data, err := caseSensitiveJSONIterator.MarshalIndent(obj, "", "  ")
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	}
+	encoder := json.NewEncoder(w)
+	return encoder.Encode(obj)
+}
+```
+支持两种格式的序列化操作。
+
+如果是YAML格式，通过`caseSensitiveJSONIterator.Marshal`函数将资源转成JSON格式，然后通过`yaml.JSONToYAML`将json格式转换为YAML格式并返回数据。
+
+如果是JSON格式，通过Go语言标准库`json.NewEncoder`函数将资源对象转换为JSON格式，如果开启pretty通过`caseSensitiveJSONIterator.MarshalIndent`函数优化JSON格式。
+
+protobuf序列化[staging/src/k8s.io/apimachinery/pkg/runtime/serializer/protobuf/protobuf.go]
+```go
+func (s *RawSerializer) Encode(obj runtime.Object, w io.Writer) error {
+	if co, ok := obj.(runtime.CacheableObject); ok {
+		return co.CacheEncode(s.Identifier(), s.doEncode, w)
+	}
+	return s.doEncode(obj, w)
+}
+
+func (s *RawSerializer) doEncode(obj runtime.Object, w io.Writer) error {
+	switch t := obj.(type) {
+	case bufferedReverseMarshaller:
+		// this path performs a single allocation during write but requires the caller to implement
+		// the more efficient Size and MarshalToSizedBuffer methods
+		encodedSize := uint64(t.Size())
+		data := make([]byte, encodedSize)
+
+		n, err := t.MarshalToSizedBuffer(data)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data[:n])
+		return err
+
+	case bufferedMarshaller:
+		// this path performs a single allocation during write but requires the caller to implement
+		// the more efficient Size and MarshalTo methods
+		encodedSize := uint64(t.Size())
+		data := make([]byte, encodedSize)
+
+		n, err := t.MarshalTo(data)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data[:n])
+		return err
+
+	case proto.Marshaler:
+		// this path performs extra allocations
+		data, err := t.Marshal()
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+
+	default:
+		return errNotMarshalable{reflect.TypeOf(obj)}
+	}
+}
+```
+验证资源对象是否为`proto.Marshaler`类型，`proto.Marshaler`是一个interface接口类型，该结构专门留给对象自定义实现的序列化操作。
+
+### Convert资源版本转换器
+
+同一资源拥有多个版本，可以通过`kubectl convert`命令进行资源版本转换。`kubectl convert -f dp.yaml --output-version=apps/v1`
+
+首先定义一个YAML Manifest File资源描述文件，该文件中定义Deployment资源版本为v1beta1，通过`kubectl convert`命令，`--output-version`将资源版本转换为指定的资源版本`v1`。
+如果指定的资源版本不再Scheme资源注册表中，会报错。如果不指定资源版本，则默认转换为资源的首选版本。
+
+当需要在两个资源版本之间进行转换时，会将第一个资源版本转换为`_internal`内部版本，在转换为相应的资源版本。
+[staging/src/k8s.io/apimachinery/pkg/conversion/converter.go]
+```go
+type Converter struct {
+    // 默认转换函数，这些转换函数一般定义在资源目录下的converter.go
+	conversionFuncs          ConversionFuncs
+    // 自动生成的转换函数，这些转换函数一般定义在资源目录的zz_generated.conversion.go代码文件中，是由代码生成器自动生成的转换函数
+	generatedConversionFuncs ConversionFuncs
+    // 若注册对象注册到此资源，则忽略此资源对象的转换操作
+	ignoredConversions        map[typePair]struct{}
+	ignoredUntypedConversions map[typePair]struct{}
+    // 在转化过程中其用于获取资源种类的名称，该函数被定义[staging/src/k8s.io/apimachinery/pkg/runtime/scheme.go]中
+	nameFunc func(t reflect.Type) string
+}
+```
+
+#### Converter注册转换函数
+- scheme.AddIgnoredConversionType：注册忽略的资源类型，不会执行转换操作，忽略资源对象的转换操作
+- scheme.AddConversionFunc：注册单个Conversion Func转换函数
+- scheme.AddGeneratedConversionFunc：注册自动生成的转换函数
+- scheme.AddFieldLabelConversionFunc：注册字段标签（FieldLabel）的转换函数
