@@ -121,6 +121,8 @@ func Load(data []byte) (*clientcmdapi.Config, error) {
 ### 2、RESEClient客户端
 
 ```go
+package main
+
 import (
 	"fmt"
 
@@ -219,5 +221,256 @@ func (r *Request) request(ctx context.Context, fn func(*http.Request, *http.Resp
 
 请求发送之前需要根据请求参数生成请求的RESTful URL，由r.URL.String函数完成。
 
-### ClientSet客户端
+### 3、ClientSet客户端
+
+RESTClient是最基础的客户端，使用时需要指定Resource和Version等信息。而ClientSet使用更加便捷。
+
+ClientSet在RESTClient的基础上封装了对Resource和Version的管理方法。每个Resource可以理解为一个客户端，而ClientSet则是多个客户端的集合，每个Resource和Version都以函数的形式暴露。
+
+> ClientSet仅能访问kubernetes自身内置的资源（即客户端集合的资源），不能直接访问CRD资源，可以通过client-gen代码生成器重新生成ClientSet，在ClientSet集合中自动生成CRD相关的接口。
+
+```go
+package main
+
+import (
+	"fmt"
+    "k8s.io/client-go/kubernetes"
+
+	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/clientcmd"
+)
+
+func main() {
+	config, err := clientcmd.BuildConfigFromFlags("", "/root/.kube/config")
+	if err != nil {
+		panic(err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err)
+	}
+    
+    podClient := clientset.CoreV1().Pods(apiv1.NamespaceDefault)
+    list,err := podClient.List(metav1.ListOptions{Limit: 500})
+    if err != nil {
+        panic(err)
+    }
+    
+    for _,d := range list.Items {
+        fmt.Printf("NAMESPACE: %v \t NAME: %v \t STATU: %+v\n",d.Namespace,d.Name,d.Status.Phase)
+    }
+}
+```
+
+可以看到对Pod资源执行的操作是在RESTClient进行封装，可以设置选项(如Limit，TimeoutSeconds等)
+[staging/src/k8s.io/client-go/kubernetes/typed/core/v1/pod.go]
+```go
+type pods struct {
+	client rest.Interface
+	ns     string
+}
+
+// newPods returns a Pods
+func newPods(c *CoreV1Client, namespace string) *pods {
+	return &pods{
+		client: c.RESTClient(),
+		ns:     namespace,
+	}
+}
+
+// Get takes name of the pod, and returns the corresponding pod object, and an error if there is any.
+func (c *pods) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.Pod, err error) {
+	result = &v1.Pod{}
+	err = c.client.Get().
+		Namespace(c.ns).
+		Resource("pods").
+		Name(name).
+		VersionedParams(&options, scheme.ParameterCodec).
+		Do(ctx).
+		Into(result)
+	return
+}
+```
+
+### 4、DynamicClient客户端
+
+是一种动态客户端，可以对任意kubernetes资源进行RESTClient操作，包括CRD自定义资源。
+
+DynamicClient内部实现了Unstructured，用于处理非结构化数据结构，也是能处理CRD资源的关键。
+
+> DynamicClient不是安全类型，因此在访问CRD自定义资源时需要特别注意。例如，在操作指针不当的情况下可能会导致程序崩溃。
+
+```go
+package main
+
+import (
+	"fmt"
+    apiv1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/dynamic"
+    _ "k8s.io/client-go/plugin/pkg/client/auth"
+)
+
+func main() {
+	config, err := clientcmd.BuildConfigFromFlags("", "/root/.kube/config")
+	if err != nil {
+		panic(err)
+	}
+
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		panic(err)
+	}
+    
+    gvr := schema.GroupVersionResource{Version: "v1", Resource: "pods"}
+    unstructObj,err := dynamicClient.Resource(gvr).Namespace(apiv1.NamespaceDefault).List(metav1.ListOptions{Limit: 500})
+    if err != nil {
+        panic(err)
+    }
+
+    podList := &corev1.PodList{}
+    err = runtime.DefaultUnstructuredConverter.FromUnstructured(unstructObj.UnstructruedContent(),podList)
+    if err != nil {
+        panic(err)
+    }
+    for _,d := range podList.Items {
+        fmt.Printf("NAMESPACE: %v \t NAME: %v \t STATU: %+v\n",d.Namespace,d.Name,d.Status.Phase)
+    }
+}
+```
+
+### 5、DiscoveryClient客户端
+
+发现客户端，主要用于发现kubernetes API Server所支持的资源组、资源版本、资源信息。
+用户可以通过DiscoveryClient来查看所支持的资源组、资源版本、资源信息。
+kubectl的api-versions和api-resources命令输出也是通过DiscoveryClient实现的。同样，DiscoveryClient在RESTClient的基础上进行了封装。
+
+DiscoveryClient还可以将信息存储到本地，用于本地缓存(Cache)，以减轻对kubernetes API Server访问的压力。
+在运行kubernetes组件的机器上，缓存信息默认存储于`~/.kube/cache`和`~/.kube/http-cache`下。
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/discovery"
+)
+
+func main() {
+	config, err := clientcmd.BuildConfigFromFlags("", "/root/.kube/config")
+	if err != nil {
+		panic(err)
+	}
+
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		panic(err)
+	}
+    
+    _,APIResourceList,err := discoveryClient.ServerGroupsAndResources()
+    if err != nil {
+        panic(err)
+    }
+    
+    for _,list := range APIResourceList {
+        gv,err := schema.ParseGroupVersion(list.GroupVersion)
+        if err != nil {
+           panic(err)
+        }
+        for _,resource := range list.APIResources {
+             fmt.Printf("name: %v, group: %v, version: %v\n",resource.Name,gv.Group,gv.Version)           
+        }
+    }
+}
+```
+
+kubernetes API Server暴露出`/api`和`/apis`接口。DiscoveryClient通过RESTClient分别请求`/api`和`/apis`接口，从而获取所支持的资源组、资源版本、资源信息。
+
+[staging/src/k8s.io/client-go/discovery/discovery_client.go]
+```go
+func (d *DiscoveryClient) ServerGroups() (apiGroupList *metav1.APIGroupList, err error) {
+	// Get the groupVersions exposed at /api
+	v := &metav1.APIVersions{}
+	err = d.restClient.Get().AbsPath(d.LegacyPrefix).Do(context.TODO()).Into(v)
+	apiGroup := metav1.APIGroup{}
+	if err == nil && len(v.Versions) != 0 {
+		apiGroup = apiVersionsToAPIGroup(v)
+	}
+	if err != nil && !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+		return nil, err
+	}
+
+	// Get the groupVersions exposed at /apis
+	apiGroupList = &metav1.APIGroupList{}
+	err = d.restClient.Get().AbsPath("/apis").Do(context.TODO()).Into(apiGroupList)
+	if err != nil && !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+		return nil, err
+	}
+	// to be compatible with a v1.0 server, if it's a 403 or 404, ignore and return whatever we got from /api
+	if err != nil && (errors.IsNotFound(err) || errors.IsForbidden(err)) {
+		apiGroupList = &metav1.APIGroupList{}
+	}
+
+	// prepend the group retrieved from /api to the list if not empty
+	if len(v.Versions) != 0 {
+		apiGroupList.Groups = append([]metav1.APIGroup{apiGroup}, apiGroupList.Groups...)
+	}
+	return apiGroupList, nil
+}
+```
+
+#### 本地缓存
+
+默认每10分钟与kubernetes API Server同步一次，同步周期较长，因为资源组、资源版本、资源信息一般很少变动。
+
+[discovery\cached\disk\cached_discovery.go]
+```go
+// ServerResourcesForGroupVersion returns the supported resources for a group and version.
+func (d *CachedDiscoveryClient) ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error) {
+	filename := filepath.Join(d.cacheDirectory, groupVersion, "serverresources.json")
+	cachedBytes, err := d.getCachedFile(filename)
+	// don't fail on errors, we either don't have a file or won't be able to run the cached check. Either way we can fallback.
+	if err == nil {
+		cachedResources := &metav1.APIResourceList{}
+		if err := runtime.DecodeInto(scheme.Codecs.UniversalDecoder(), cachedBytes, cachedResources); err == nil {
+			klog.V(10).Infof("returning cached discovery info from %v", filename)
+			return cachedResources, nil
+		}
+	}
+
+	liveResources, err := d.delegate.ServerResourcesForGroupVersion(groupVersion)
+	if err != nil {
+		klog.V(3).Infof("skipped caching discovery info due to %v", err)
+		return liveResources, err
+	}
+	if liveResources == nil || len(liveResources.APIResources) == 0 {
+		klog.V(3).Infof("skipped caching discovery info, no resources found")
+		return liveResources, err
+	}
+
+	if err := d.writeCachedFile(filename, liveResources); err != nil {
+		klog.V(1).Infof("failed to write cache to %v due to %v", filename, err)
+	}
+
+	return liveResources, nil
+}
+```
+
+## Informer机制
+
+在kubernetes系统中，组件通过HTTP协议进行通信，在不依赖任何中间件的情况下需要保证消息的实时性、可靠性、顺序性等，依靠的是Informer机制。
+kubernetes的其他组件都是通过client-go的Informer机制与kubernetes API Server进行通信的。
+
+### 1、Informer机制架构设计
+
+![img](../../../../docs/images/informer.png)
 
