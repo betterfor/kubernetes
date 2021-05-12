@@ -373,10 +373,12 @@ func isDeletionDup(a, b *Delta) *Delta {
 // queueActionLocked appends to the delta list for the object.
 // Caller must lock first.
 func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) error {
+	// 1、计算出资源对象的key
 	id, err := f.KeyOf(obj)
 	if err != nil {
 		return KeyError{obj, err}
 	}
+	// 2、将actionType和资源对象构造成Delta，添加到items中，并通过dedupDeltas函数进行去重操作
 	oldDeltas := f.items[id]
 	newDeltas := append(oldDeltas, Delta{actionType, obj})
 	newDeltas = dedupDeltas(newDeltas)
@@ -385,6 +387,7 @@ func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) err
 		if _, exists := f.items[id]; !exists {
 			f.queue = append(f.queue, id)
 		}
+		// 3、更新构造后的Delta并cond.Broadcast通知所有消费者解除阻塞
 		f.items[id] = newDeltas
 		f.cond.Broadcast()
 	} else {
@@ -482,6 +485,7 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	for {
+		// 1、队列中没有数据时，通过cond.Wait阻塞等待数据，只有收到cond.Broadcast时才说明有数据被添加，解除当前阻塞状态。
 		for len(f.queue) == 0 {
 			// When the queue is empty, invocation of Pop() is blocked until new item is enqueued.
 			// When Close() is called, the f.closed is set and the condition is broadcasted.
@@ -492,6 +496,7 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 
 			f.cond.Wait()
 		}
+		// 2、如果队列不为空，取出queue头部数据，将对象传入process回调函数，由上层消费者处理
 		id := f.queue[0]
 		f.queue = f.queue[1:]
 		if f.initialPopulationCount > 0 {
@@ -505,6 +510,7 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 		}
 		delete(f.items, id)
 		err := process(item)
+		// 3、如果回调函数处理错误，则将该对象重新存储队列
 		if e, ok := err.(ErrRequeue); ok {
 			f.addIfNotPresent(id, item)
 			err = e.Err

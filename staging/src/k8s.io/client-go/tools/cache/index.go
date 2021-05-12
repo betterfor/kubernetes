@@ -55,6 +55,7 @@ type Indexer interface {
 	AddIndexers(newIndexers Indexers) error
 }
 
+// 索引器函数，定义为接受一个资源对象，返回索引结果列表
 // IndexFunc knows how to compute the set of indexed values for an object.
 type IndexFunc func(obj interface{}) ([]string, error)
 
@@ -91,11 +92,14 @@ func MetaNamespaceIndexFunc(obj interface{}) ([]string, error) {
 	return []string{meta.GetNamespace()}, nil
 }
 
+// 存储缓存数据，结构是key/val
 // Index maps the indexed value to a set of keys in the store that match on that value
 type Index map[string]sets.String
 
+// 存储索引器，key为索引器名称，val为索引器实现函数
 // Indexers maps a name to a IndexFunc
 type Indexers map[string]IndexFunc
 
+// 存储缓存器，key为缓存区名称，val为换粗数据
 // Indices maps a name to an Index
 type Indices map[string]Index

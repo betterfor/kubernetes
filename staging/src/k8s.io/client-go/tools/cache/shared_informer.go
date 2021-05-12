@@ -532,6 +532,8 @@ func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 	for _, d := range obj.(Deltas) {
 		switch d.Type {
 		case Sync, Replaced, Added, Updated:
+			// 当操作类型是Sync, Replaced, Added, Updated时，将该资源对象存储至Indexer（并发安全存储）
+			// 并通过distribute分发到SharedInformer
 			s.cacheMutationDetector.AddObject(d.Object)
 			if old, exists, err := s.indexer.Get(d.Object); err == nil && exists {
 				if err := s.indexer.Update(d.Object); err != nil {

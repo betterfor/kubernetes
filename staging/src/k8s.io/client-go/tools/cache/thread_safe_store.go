@@ -181,13 +181,16 @@ func (c *threadSafeMap) ByIndex(indexName, indexedValue string) ([]interface{}, 
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
+	// 1、查找指定的索引器函数并执行
 	indexFunc := c.indexers[indexName]
 	if indexFunc == nil {
 		return nil, fmt.Errorf("Index with name %s does not exist", indexName)
 	}
 
+	// 2、查找指定的缓存器函数
 	index := c.indices[indexName]
 
+	// 3、检索indexedValue从缓存数据中查到并返回数据
 	set := index[indexedValue]
 	list := make([]interface{}, 0, set.Len())
 	for key := range set {
