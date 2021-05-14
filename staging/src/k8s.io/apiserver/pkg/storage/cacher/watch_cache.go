@@ -139,6 +139,7 @@ type watchCache struct {
 	cond *sync.Cond
 
 	// Maximum size of history window.
+	// 滑动窗口的大小
 	capacity int
 
 	// upper bound of capacity since event cache has a dynamic size.
@@ -158,9 +159,10 @@ type watchCache struct {
 	// by endIndex (if cache is full it will be startIndex + capacity).
 	// Both startIndex and endIndex can be greater than buffer capacity -
 	// you should always apply modulo capacity to get an index in cache array.
+	// 缓存滑动窗口，可以通过一个固定大小的数组向前滑动。当滑动窗口满的时候，将最先进入缓存滑动窗口的数据淘汰
 	cache      []*watchCacheEvent
-	startIndex int
-	endIndex   int
+	startIndex int // 开始下标
+	endIndex   int // 结束下标
 
 	// store will effectively support LIST operation from the "end of cache
 	// history" i.e. from the moment just after the newest cached watched event.
@@ -343,6 +345,8 @@ func (w *watchCache) updateCache(event *watchCacheEvent) {
 // resizeCacheLocked resizes the cache if necessary:
 // - increases capacity by 2x if cache is full and all cached events occurred within last eventFreshDuration.
 // - decreases capacity by 2x when recent quarter of events occurred outside of eventFreshDuration(protect watchCache from flapping).
+// 如果滑动窗口满了，并且事件间隔小于75s，则扩张2倍
+// 如果事件间隔小于75s，则收缩2倍
 func (w *watchCache) resizeCacheLocked(eventTime time.Time) {
 	if w.isCacheFullLocked() && eventTime.Sub(w.cache[w.startIndex%w.capacity].RecordTime) < eventFreshDuration {
 		capacity := min(w.capacity*2, w.upperBoundCapacity)
@@ -362,12 +366,14 @@ func (w *watchCache) resizeCacheLocked(eventTime time.Time) {
 
 // isCacheFullLocked used to judge whether watchCacheEvent is full.
 // Assumes that lock is already held for write.
+// 判断滑动窗口是否满了
 func (w *watchCache) isCacheFullLocked() bool {
 	return w.endIndex == w.startIndex+w.capacity
 }
 
 // doCacheResizeLocked resize watchCache's event array with different capacity.
 // Assumes that lock is already held for write.
+// 根据capacity的变化更新事件
 func (w *watchCache) doCacheResizeLocked(capacity int) {
 	newCache := make([]*watchCacheEvent, capacity)
 	if capacity < w.capacity {

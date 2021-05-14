@@ -43,6 +43,7 @@ type RESTCreateStrategy interface {
 	names.NameGenerator
 
 	// NamespaceScoped returns true if the object must be within a namespace.
+	// 判断当前资源是否拥有所属的命名空间，如有所有的命名空间，则返回true
 	NamespaceScoped() bool
 	// PrepareForCreate is invoked on create before validation to normalize
 	// the object.  For example: remove fields that are not to be persisted,
@@ -53,11 +54,13 @@ type RESTCreateStrategy interface {
 	// status. Clear the status because status changes are internal. External
 	// callers of an api (users) should not be setting an initial status on
 	// newly created objects.
+	// 创建当前资源对象之前的处理函数
 	PrepareForCreate(ctx context.Context, obj runtime.Object)
 	// Validate returns an ErrorList with validation errors or nil.  Validate
 	// is invoked after default fields in the object have been filled in
 	// before the object is persisted.  This method should not mutate the
 	// object.
+	// 创建当前资源对象之前的验证函数。验证资源对象的字段信息，此方法不会修改对象
 	Validate(ctx context.Context, obj runtime.Object) field.ErrorList
 	// Canonicalize allows an object to be mutated into a canonical form. This
 	// ensures that code that operates on these objects can rely on the common
@@ -65,6 +68,7 @@ type RESTCreateStrategy interface {
 	// validation has succeeded but before the object has been persisted.
 	// This method may mutate the object. Often implemented as a type check or
 	// empty method.
+	// 在创建当前资源对象之前将存储的资源对象规范化。在当前kubernetes未使用该方法
 	Canonicalize(obj runtime.Object)
 }
 

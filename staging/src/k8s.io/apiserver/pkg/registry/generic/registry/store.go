@@ -57,10 +57,10 @@ type ObjectFunc func(obj runtime.Object) error
 
 // GenericStore interface can be used for type assertions when we need to access the underlying strategies.
 type GenericStore interface {
-	GetCreateStrategy() rest.RESTCreateStrategy
-	GetUpdateStrategy() rest.RESTUpdateStrategy
-	GetDeleteStrategy() rest.RESTDeleteStrategy
-	GetExportStrategy() rest.RESTExportStrategy
+	GetCreateStrategy() rest.RESTCreateStrategy // 创建资源对象时的预处理操作
+	GetUpdateStrategy() rest.RESTUpdateStrategy // 更新资源对象时的预处理操作
+	GetDeleteStrategy() rest.RESTDeleteStrategy // 删除资源对象时的预处理操作
+	GetExportStrategy() rest.RESTExportStrategy // 导出资源对象时的预处理操作
 }
 
 // Store implements pkg/api/rest.StandardStorage. It's intended to be
