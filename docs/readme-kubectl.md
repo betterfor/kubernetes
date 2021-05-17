@@ -217,7 +217,7 @@ func main() {
 
 Deployment是一种常见的资源对象。在kubernetes系统中创建资源对象有很多方法。本节将对用`kubectl create`命令创建Deployment资源对象的过程进行分析。
 
-![kubectl资源对象创建过程](docs/images/kubectl资源对象创建过程.png)
+![kubectl资源对象创建过程](images/kubectl资源对象创建过程.png)
 
 原理：客户端与服务端进行一次HTTP请求的交互。
 
