@@ -167,7 +167,7 @@ func (c completedConfig) NewWithDelegate(delegationTarget genericapiserver.Deleg
 	// has its own customized OpenAPI handler.
 	openAPIConfig := c.GenericConfig.OpenAPIConfig
 	c.GenericConfig.OpenAPIConfig = nil
-
+	// 1、创建GenericAPIServer
 	genericServer, err := c.GenericConfig.New("kube-aggregator", delegationTarget)
 	if err != nil {
 		return nil, err
@@ -182,6 +182,7 @@ func (c completedConfig) NewWithDelegate(delegationTarget genericapiserver.Deleg
 		5*time.Minute, // this is effectively used as a refresh interval right now.  Might want to do something nicer later on.
 	)
 
+	// 2、实例化APIAggregator
 	s := &APIAggregator{
 		GenericAPIServer:           genericServer,
 		delegateHandler:            delegationTarget.UnprotectedHandler(),
@@ -195,8 +196,9 @@ func (c completedConfig) NewWithDelegate(delegationTarget genericapiserver.Deleg
 		egressSelector:             c.GenericConfig.EgressSelector,
 		proxyCurrentCertKeyContent: func() (bytes []byte, bytes2 []byte) { return nil, nil },
 	}
-
+	// 3、实例化APIGroupInfo
 	apiGroupInfo := apiservicerest.NewRESTStorage(c.GenericConfig.MergedResourceConfig, c.GenericConfig.RESTOptionsGetter)
+	// 4、installGroupInfo注册APIGroup
 	if err := s.GenericAPIServer.InstallAPIGroup(&apiGroupInfo); err != nil {
 		return nil, err
 	}

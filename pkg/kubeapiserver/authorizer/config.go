@@ -81,6 +81,7 @@ func (config Config) New() (authorizer.Authorizer, authorizer.RuleResolver, erro
 	for _, authorizationMode := range config.AuthorizationModes {
 		// Keep cases in sync with constant list in k8s.io/kubernetes/pkg/kubeapiserver/authorizer/modes/modes.go.
 		switch authorizationMode {
+		// Node
 		case modes.ModeNode:
 			node.RegisterMetrics()
 			graph := node.NewGraph()
@@ -94,15 +95,17 @@ func (config Config) New() (authorizer.Authorizer, authorizer.RuleResolver, erro
 			nodeAuthorizer := node.NewAuthorizer(graph, nodeidentifier.NewDefaultNodeIdentifier(), bootstrappolicy.NodeRules())
 			authorizers = append(authorizers, nodeAuthorizer)
 			ruleResolvers = append(ruleResolvers, nodeAuthorizer)
-
+		// 	AlwaysAllow
 		case modes.ModeAlwaysAllow:
 			alwaysAllowAuthorizer := authorizerfactory.NewAlwaysAllowAuthorizer()
 			authorizers = append(authorizers, alwaysAllowAuthorizer)
 			ruleResolvers = append(ruleResolvers, alwaysAllowAuthorizer)
+		// 	AlwaysDeny
 		case modes.ModeAlwaysDeny:
 			alwaysDenyAuthorizer := authorizerfactory.NewAlwaysDenyAuthorizer()
 			authorizers = append(authorizers, alwaysDenyAuthorizer)
 			ruleResolvers = append(ruleResolvers, alwaysDenyAuthorizer)
+		// 	ABAC
 		case modes.ModeABAC:
 			abacAuthorizer, err := abac.NewFromFile(config.PolicyFile)
 			if err != nil {
@@ -110,6 +113,7 @@ func (config Config) New() (authorizer.Authorizer, authorizer.RuleResolver, erro
 			}
 			authorizers = append(authorizers, abacAuthorizer)
 			ruleResolvers = append(ruleResolvers, abacAuthorizer)
+		// 	Webhook
 		case modes.ModeWebhook:
 			if config.WebhookRetryBackoff == nil {
 				return nil, nil, errors.New("retry backoff parameters for authorization webhook has not been specified")
@@ -125,6 +129,7 @@ func (config Config) New() (authorizer.Authorizer, authorizer.RuleResolver, erro
 			}
 			authorizers = append(authorizers, webhookAuthorizer)
 			ruleResolvers = append(ruleResolvers, webhookAuthorizer)
+		// 	RBAC
 		case modes.ModeRBAC:
 			rbacAuthorizer := rbac.New(
 				&rbac.RoleGetter{Lister: config.VersionedInformerFactory.Rbac().V1().Roles().Lister()},
@@ -139,5 +144,7 @@ func (config Config) New() (authorizer.Authorizer, authorizer.RuleResolver, erro
 		}
 	}
 
+	// 当客户端请求到kube-apiserver时，kube-apiserver会遍历授权器列表，并按照顺序执行授权器，排在前面的授权器具有更高的优先级（允许或拒绝请求）。
+	// 客户端发起一个请求，在经过授权阶段，只要有一个授权器通过，则授权成功。
 	return union.New(authorizers...), union.NewRuleResolvers(ruleResolvers...), nil
 }

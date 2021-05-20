@@ -99,6 +99,7 @@ func (a *APIInstaller) Install() ([]metav1.APIResource, []*storageversion.Resour
 	var apiResources []metav1.APIResource
 	var resourceInfos []*storageversion.ResourceInfo
 	var errors []error
+	// 创建一个WebService
 	ws := a.newWebService()
 
 	// Register the paths in a deterministic (sorted) order to get a deterministic swagger spec.
@@ -110,6 +111,7 @@ func (a *APIInstaller) Install() ([]metav1.APIResource, []*storageversion.Resour
 	}
 	sort.Strings(paths)
 	for _, path := range paths {
+		// 绑定资源和handler方法
 		apiResource, resourceInfo, err := a.registerResourceHandlers(path, a.group.Storage[path], ws)
 		if err != nil {
 			errors = append(errors, fmt.Errorf("error in registering resource: %s, %v", path, err))

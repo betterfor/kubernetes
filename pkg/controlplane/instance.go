@@ -357,6 +357,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		return nil, fmt.Errorf("Master.New() called with empty config.KubeletClientConfig")
 	}
 
+	// 1、创建GenericAPIServer
 	s, err := c.GenericConfig.New("kube-apiserver", delegationTarget)
 	if err != nil {
 		return nil, err
@@ -399,11 +400,13 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		}
 	}
 
+	// 2、实例化Master
 	m := &Instance{
 		GenericAPIServer:          s,
 		ClusterAuthenticationInfo: c.ExtraConfig.ClusterAuthenticationInfo,
 	}
 
+	// 3、InstallLegacyAPI注册/api资源
 	// install legacy rest storage
 	if c.ExtraConfig.APIResourceConfigSource.VersionEnabled(apiv1.SchemeGroupVersion) {
 		legacyRESTStorageProvider := corerest.LegacyRESTStorageProvider{
@@ -432,6 +435,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 	// with specific priorities.
 	// TODO: describe the priority all the way down in the RESTStorageProviders and plumb it back through the various discovery
 	// handlers that we have.
+	// 4、InstallAPIs注册/apis资源
 	restStorageProviders := []RESTStorageProvider{
 		apiserverinternalrest.StorageProvider{},
 		authenticationrest.RESTStorageProvider{Authenticator: c.GenericConfig.Authentication.Authenticator, APIAudiences: c.GenericConfig.Authentication.APIAudiences},
@@ -669,6 +673,7 @@ func (n nodeAddressProvider) externalAddresses() ([]string, error) {
 // DefaultAPIResourceConfigSource returns default configuration for an APIResource.
 func DefaultAPIResourceConfigSource() *serverstorage.ResourceConfig {
 	ret := serverstorage.NewResourceConfig()
+	// 启用stable和beta的资源，不启用alpha资源版本的资源
 	// NOTE: GroupVersions listed here will be enabled by default. Don't put alpha versions in the list.
 	ret.EnableVersions(
 		admissionregistrationv1.SchemeGroupVersion,

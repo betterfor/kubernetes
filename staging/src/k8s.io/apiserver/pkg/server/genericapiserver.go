@@ -571,7 +571,7 @@ func (s *GenericAPIServer) newAPIGroupVersion(apiGroupInfo *APIGroupInfo, groupV
 func NewDefaultAPIGroupInfo(group string, scheme *runtime.Scheme, parameterCodec runtime.ParameterCodec, codecs serializer.CodecFactory) APIGroupInfo {
 	return APIGroupInfo{
 		PrioritizedVersions:          scheme.PrioritizedVersionsForGroup(group),
-		VersionedResourcesStorageMap: map[string]map[string]rest.Storage{},
+		VersionedResourcesStorageMap: map[string]map[string]rest.Storage{}, // 存储资源与存储对象的关系
 		// TODO unhardcode this.  It was hardcoded before, but we need to re-evaluate
 		OptionsExternalVersion: &schema.GroupVersion{Version: "v1"},
 		Scheme:                 scheme,

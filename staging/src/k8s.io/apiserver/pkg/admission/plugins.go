@@ -37,7 +37,7 @@ type Factory func(config io.Reader) (Interface, error)
 
 type Plugins struct {
 	lock     sync.Mutex
-	registry map[string]Factory
+	registry map[string]Factory // 键值对存储插件，key为准入器的名称，value对应准入器
 }
 
 func NewPlugins() *Plugins {

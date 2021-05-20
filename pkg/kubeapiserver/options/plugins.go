@@ -105,6 +105,7 @@ var AllOrderedPlugins = []string{
 
 // RegisterAllAdmissionPlugins registers all admission plugins and
 // sets the recommended plugins order.
+// 31种准入控制器
 func RegisterAllAdmissionPlugins(plugins *admission.Plugins) {
 	admit.Register(plugins) // DEPRECATED as no real meaning
 	alwayspullimages.Register(plugins)

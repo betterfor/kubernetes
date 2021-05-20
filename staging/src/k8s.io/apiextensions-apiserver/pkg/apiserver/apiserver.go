@@ -126,17 +126,21 @@ func (cfg *Config) Complete() CompletedConfig {
 
 // New returns a new instance of CustomResourceDefinitions from the given config.
 func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget) (*CustomResourceDefinitions, error) {
+	// 1、创建GenericAPIServer
 	genericServer, err := c.GenericConfig.New("apiextensions-apiserver", delegationTarget)
 	if err != nil {
 		return nil, err
 	}
 
+	// 2、实例化CustomResourceDefinitions
 	s := &CustomResourceDefinitions{
 		GenericAPIServer: genericServer,
 	}
 
+	// 3、实例化APIGroupInfo
 	apiResourceConfig := c.GenericConfig.MergedResourceConfig
 	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(apiextensions.GroupName, Scheme, metav1.ParameterCodec, Codecs)
+	// 判断apiextensions.k8s.io/v1beta1资源组/资源版本是否启用，如果启用，则将该资源版本下的资源与资源存储对象进行映射存储至apiGroupInfo的VersionedResourcesStorageMap字段中
 	if apiResourceConfig.VersionEnabled(v1beta1.SchemeGroupVersion) {
 		storage := map[string]rest.Storage{}
 		// customresourcedefinitions
@@ -162,6 +166,9 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		apiGroupInfo.VersionedResourcesStorageMap[v1.SchemeGroupVersion.Version] = storage
 	}
 
+	// 4、InstallAPIGroup注册APIGroup
+	// 将APIGroupInfo对象中的<资源组>/<资源版本>/<资源>/<子资源>注册到APIExtensionsServerHandler函数
+	// InstallAPIGroup->s.installAPIResources->InstallREST
 	if err := s.GenericAPIServer.InstallAPIGroup(&apiGroupInfo); err != nil {
 		return nil, err
 	}

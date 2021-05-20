@@ -99,6 +99,7 @@ func (config Config) New() (authenticator.Request, *spec.SecurityDefinitions, er
 
 	// front-proxy, BasicAuth methods, local first, then remote
 	// Add the front proxy authenticator if requested
+	// 如果启用，实例化RequestHeader认证
 	if config.RequestHeaderConfig != nil {
 		requestHeaderAuthenticator := headerrequest.NewDynamicVerifyOptionsSecure(
 			config.RequestHeaderConfig.CAContentProvider.VerifyOptions,
@@ -110,12 +111,14 @@ func (config Config) New() (authenticator.Request, *spec.SecurityDefinitions, er
 		authenticators = append(authenticators, authenticator.WrapAudienceAgnosticRequest(config.APIAudiences, requestHeaderAuthenticator))
 	}
 
+	// 如果启用，实例化ClientCA认证
 	// X509 methods
 	if config.ClientCAContentProvider != nil {
 		certAuth := x509.NewDynamic(config.ClientCAContentProvider.VerifyOptions, x509.CommonNameUserConversion)
 		authenticators = append(authenticators, certAuth)
 	}
 
+	// 如果启用，实例化TokenAuth认证
 	// Bearer token methods, local first, then remote
 	if len(config.TokenAuthFile) > 0 {
 		tokenAuth, err := newAuthenticatorFromTokenFile(config.TokenAuthFile)
@@ -124,6 +127,7 @@ func (config Config) New() (authenticator.Request, *spec.SecurityDefinitions, er
 		}
 		tokenAuthenticators = append(tokenAuthenticators, authenticator.WrapAudienceAgnosticToken(config.APIAudiences, tokenAuth))
 	}
+	// 如果启用，实例化ServiceAccountAuth认证
 	if len(config.ServiceAccountKeyFiles) > 0 {
 		serviceAccountAuth, err := newLegacyServiceAccountAuthenticator(config.ServiceAccountKeyFiles, config.ServiceAccountLookup, config.APIAudiences, config.ServiceAccountTokenGetter)
 		if err != nil {
@@ -131,6 +135,7 @@ func (config Config) New() (authenticator.Request, *spec.SecurityDefinitions, er
 		}
 		tokenAuthenticators = append(tokenAuthenticators, serviceAccountAuth)
 	}
+	// 如果启用，实例化ServiceAccountIssuer认证
 	if config.ServiceAccountIssuer != "" {
 		serviceAccountAuth, err := newServiceAccountAuthenticator(config.ServiceAccountIssuer, config.ServiceAccountKeyFiles, config.APIAudiences, config.ServiceAccountTokenGetter)
 		if err != nil {
@@ -138,12 +143,14 @@ func (config Config) New() (authenticator.Request, *spec.SecurityDefinitions, er
 		}
 		tokenAuthenticators = append(tokenAuthenticators, serviceAccountAuth)
 	}
+	// 如果启用，实例化BootstrapToken认证
 	if config.BootstrapToken {
 		if config.BootstrapTokenAuthenticator != nil {
 			// TODO: This can sometimes be nil because of
 			tokenAuthenticators = append(tokenAuthenticators, authenticator.WrapAudienceAgnosticToken(config.APIAudiences, config.BootstrapTokenAuthenticator))
 		}
 	}
+	// 如果启用，实例化OIDC认证
 	// NOTE(ericchiang): Keep the OpenID Connect after Service Accounts.
 	//
 	// Because both plugins verify JWTs whichever comes first in the union experiences
@@ -167,6 +174,7 @@ func (config Config) New() (authenticator.Request, *spec.SecurityDefinitions, er
 		}
 		tokenAuthenticators = append(tokenAuthenticators, authenticator.WrapAudienceAgnosticToken(config.APIAudiences, oidcAuth))
 	}
+	// 如果启用，实例化WebhookTokenAuth认证
 	if len(config.WebhookTokenAuthnConfigFile) > 0 {
 		webhookTokenAuth, err := newWebhookTokenAuthenticator(config)
 		if err != nil {
@@ -201,10 +209,13 @@ func (config Config) New() (authenticator.Request, *spec.SecurityDefinitions, er
 		return nil, &securityDefinitions, nil
 	}
 
+	// 将已启用的认证器合并到authenticators数组对象中，合并成一个authenticator认证器，实际上将认证器列表存放在union结构体的Handlers  []authenticator.Request对象中。
+	// 当客户端请求到达kube-apiserver时，kube-apiserver会遍历认证器列表，尝试执行每个认证器，当有一个认证器返回true时，则认证成功
 	authenticator := union.New(authenticators...)
 
 	authenticator = group.NewAuthenticatedGroupAdder(authenticator)
 
+	// 如果启用，实例化Anonymous认证
 	if config.Anonymous {
 		// If the authenticator chain returns an error, return an error (don't consider a bad bearer token
 		// or invalid username/password combination anonymous).

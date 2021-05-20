@@ -49,6 +49,7 @@ type AdmissionOptions struct {
 //  Provides the list of RecommendedPluginOrder that holds sane values
 //  that can be used by servers that don't care about admission chain.
 //  Servers that do care can overwrite/append that field after creation.
+// 注册准入器
 func NewAdmissionOptions() *AdmissionOptions {
 	options := genericoptions.NewAdmissionOptions()
 	// register all admission plugins
