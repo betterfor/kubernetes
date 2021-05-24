@@ -84,10 +84,13 @@ const (
 
 const (
 	// MatchInterPodAffinityPred defines the name of predicate MatchInterPodAffinity.
+	// 检查Pod资源对象与其他Pod资源对象是否符合亲和性规则
 	MatchInterPodAffinityPred = "MatchInterPodAffinity"
 	// CheckVolumeBindingPred defines the name of predicate CheckVolumeBinding.
+	// 检查节点是否满足Pod资源对象的PVC挂载需求
 	CheckVolumeBindingPred = "CheckVolumeBinding"
 	// GeneralPred defines the name of predicate GeneralPredicates.
+	// 检查节点上Pod资源对象的上限，以及CPU、内存、GPU等资源时否符合要求
 	GeneralPred = "GeneralPredicates"
 	// HostNamePred defines the name of predicate HostName.
 	HostNamePred = "HostName"
@@ -98,8 +101,10 @@ const (
 	// PodFitsResourcesPred defines the name of predicate PodFitsResources.
 	PodFitsResourcesPred = "PodFitsResources"
 	// NoDiskConflictPred defines the name of predicate NoDiskConflict.
+	// 检查当前Pod资源对象使用的卷是否与节点其他的Pod资源对象使用的卷冲突
 	NoDiskConflictPred = "NoDiskConflict"
 	// PodToleratesNodeTaintsPred defines the name of predicate PodToleratesNodeTaints.
+	// 如果当前节点被标记为Taints，检查Pod资源对象是否能容忍Node Taints
 	PodToleratesNodeTaintsPred = "PodToleratesNodeTaints"
 	// CheckNodeUnschedulablePred defines the name of predicate CheckNodeUnschedulablePredicate.
 	CheckNodeUnschedulablePred = "CheckNodeUnschedulable"
@@ -126,6 +131,7 @@ const (
 	// MaxCSIVolumeCountPred defines the predicate that decides how many CSI volumes should be attached.
 	MaxCSIVolumeCountPred = "MaxCSIVolumeCountPred"
 	// NoVolumeZoneConflictPred defines the name of predicate NoVolumeZoneConflict.
+	// 检查Pod资源对象挂载PVC是否属于跨区域挂载
 	NoVolumeZoneConflictPred = "NoVolumeZoneConflict"
 	// EvenPodsSpreadPred defines the name of predicate EvenPodsSpread.
 	EvenPodsSpreadPred = "EvenPodsSpread"

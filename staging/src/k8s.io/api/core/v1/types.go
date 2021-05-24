@@ -2676,12 +2676,15 @@ type TopologySelectorLabelRequirement struct {
 type Affinity struct {
 	// Describes node affinity scheduling rules for the pod.
 	// +optional
+	// 节点亲和性，Pod资源对象与节点之间的关系亲和性
 	NodeAffinity *NodeAffinity `json:"nodeAffinity,omitempty" protobuf:"bytes,1,opt,name=nodeAffinity"`
 	// Describes pod affinity scheduling rules (e.g. co-locate this pod in the same node, zone, etc. as some other pod(s)).
 	// +optional
+	// Pod资源对象亲和性，Pod资源对象与Pod资源对象的关系亲和性
 	PodAffinity *PodAffinity `json:"podAffinity,omitempty" protobuf:"bytes,2,opt,name=podAffinity"`
 	// Describes pod anti-affinity scheduling rules (e.g. avoid putting this pod in the same node, zone, etc. as some other pod(s)).
 	// +optional
+	// Pod资源对象反亲和性，Pod资源对象与Pod资源对象的关系反亲和性
 	PodAntiAffinity *PodAntiAffinity `json:"podAntiAffinity,omitempty" protobuf:"bytes,3,opt,name=podAntiAffinity"`
 }
 
@@ -2706,6 +2709,7 @@ type PodAffinity struct {
 	// When there are multiple elements, the lists of nodes corresponding to each
 	// podAffinityTerm are intersected, i.e. all terms must be satisfied.
 	// +optional
+	// Pod资源对象必须被部署到满足条件的节点上（与另一个Pod资源对象相邻），如果没有满足条件的节点，则Pod资源对象创建失败并不断重试。（硬策略）
 	RequiredDuringSchedulingIgnoredDuringExecution []PodAffinityTerm `json:"requiredDuringSchedulingIgnoredDuringExecution,omitempty" protobuf:"bytes,1,rep,name=requiredDuringSchedulingIgnoredDuringExecution"`
 	// The scheduler will prefer to schedule pods to nodes that satisfy
 	// the affinity expressions specified by this field, but it may choose
@@ -2717,6 +2721,7 @@ type PodAffinity struct {
 	// "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
 	// node(s) with the highest sum are the most preferred.
 	// +optional
+	// Pod资源对象优先被部署到满足条件的节点上（与另一个Pod资源对象相邻），如果没有满足条件的节点，则从其他节点中选择较优的节点。（软策略）
 	PreferredDuringSchedulingIgnoredDuringExecution []WeightedPodAffinityTerm `json:"preferredDuringSchedulingIgnoredDuringExecution,omitempty" protobuf:"bytes,2,rep,name=preferredDuringSchedulingIgnoredDuringExecution"`
 }
 
@@ -2741,6 +2746,7 @@ type PodAntiAffinity struct {
 	// When there are multiple elements, the lists of nodes corresponding to each
 	// podAffinityTerm are intersected, i.e. all terms must be satisfied.
 	// +optional
+	// Pod资源对象必须被部署到满足条件的节点上（与另一个Pod资源对象互斥），如果没有满足条件的节点，则Pod资源对象创建失败并不断重试。（硬策略）
 	RequiredDuringSchedulingIgnoredDuringExecution []PodAffinityTerm `json:"requiredDuringSchedulingIgnoredDuringExecution,omitempty" protobuf:"bytes,1,rep,name=requiredDuringSchedulingIgnoredDuringExecution"`
 	// The scheduler will prefer to schedule pods to nodes that satisfy
 	// the anti-affinity expressions specified by this field, but it may choose
@@ -2752,6 +2758,7 @@ type PodAntiAffinity struct {
 	// "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
 	// node(s) with the highest sum are the most preferred.
 	// +optional
+	// // Pod资源对象优先被部署到满足条件的节点上（与另一个Pod资源对象互斥），如果没有满足条件的节点，则从其他节点中选择较优的节点。（软策略）
 	PreferredDuringSchedulingIgnoredDuringExecution []WeightedPodAffinityTerm `json:"preferredDuringSchedulingIgnoredDuringExecution,omitempty" protobuf:"bytes,2,rep,name=preferredDuringSchedulingIgnoredDuringExecution"`
 }
 
@@ -2803,6 +2810,7 @@ type NodeAffinity struct {
 	// at some point during pod execution (e.g. due to an update), the system
 	// may or may not try to eventually evict the pod from its node.
 	// +optional
+	// Pod资源对象必须被部署到满足条件的节点上，如果没有满足条件的节点，则Pod资源对象创建失败并不断重试。（硬策略Hard）
 	RequiredDuringSchedulingIgnoredDuringExecution *NodeSelector `json:"requiredDuringSchedulingIgnoredDuringExecution,omitempty" protobuf:"bytes,1,opt,name=requiredDuringSchedulingIgnoredDuringExecution"`
 	// The scheduler will prefer to schedule pods to nodes that satisfy
 	// the affinity expressions specified by this field, but it may choose
@@ -2814,6 +2822,7 @@ type NodeAffinity struct {
 	// "weight" to the sum if the node matches the corresponding matchExpressions; the
 	// node(s) with the highest sum are the most preferred.
 	// +optional
+	// Pod资源对象优先被部署到满足条件的节点上，如果没有满足条件的节点，则从其他节点中选择较优的节点。（软策略Soft）
 	PreferredDuringSchedulingIgnoredDuringExecution []PreferredSchedulingTerm `json:"preferredDuringSchedulingIgnoredDuringExecution,omitempty" protobuf:"bytes,2,rep,name=preferredDuringSchedulingIgnoredDuringExecution"`
 }
 

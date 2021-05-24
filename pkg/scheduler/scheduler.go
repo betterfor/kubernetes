@@ -204,6 +204,7 @@ func New(client clientset.Interface,
 
 	schedulerCache := internalcache.New(30*time.Second, stopEverything)
 
+	// 1、实例化所有的informer
 	registry := frameworkplugins.NewInTreeRegistry()
 	if err := registry.Merge(options.frameworkOutOfTreeRegistry); err != nil {
 		return nil, err
@@ -229,6 +230,7 @@ func New(client clientset.Interface,
 
 	metrics.Register()
 
+	// 2、实例化调度函数算法
 	var sched *Scheduler
 	source := options.schedulerAlgorithmSource
 	switch {
@@ -268,6 +270,7 @@ func New(client clientset.Interface,
 	sched.StopEverything = stopEverything
 	sched.client = client
 
+	// 3、给所有的Informer对象添加对资源事件的监控
 	addAllEventHandlers(sched, informerFactory)
 	return sched, nil
 }
@@ -439,6 +442,7 @@ func (sched *Scheduler) finishBinding(fwk framework.Framework, assumed *v1.Pod, 
 
 // scheduleOne does the entire scheduling workflow for a single pod. It is serialized on the scheduling algorithm's host fitting.
 func (sched *Scheduler) scheduleOne(ctx context.Context) {
+	// 1、从优先级队列中获取一个优先级最高的待调度Pod资源对象，该过程是阻塞模式的，当优先级队列中不存在任何Pod资源对象时，处于等待状态
 	podInfo := sched.NextPod()
 	// pod could be nil when schedulerQueue is closed
 	if podInfo == nil || podInfo.Pod == nil {
@@ -464,6 +468,7 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 	state.SetRecordPluginMetrics(rand.Intn(100) < pluginMetricsSamplePercent)
 	schedulingCycleCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// 2、执行预选和优选算法，为Pod资源对象找到合适的节点
 	scheduleResult, err := sched.Algorithm.Schedule(schedulingCycleCtx, fwk, state, pod)
 	if err != nil {
 		// Schedule() may have failed because the pod would not fit on any host, so we try to
@@ -588,7 +593,7 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 			sched.recordSchedulingFailure(fwk, assumedPodInfo, preBindStatus.AsError(), SchedulerError, "")
 			return
 		}
-
+		// 4、当调度器为Pod资源对象选择了一个合适的节点，把结点和Pod资源对象绑定
 		err := sched.bind(bindingCycleCtx, fwk, assumedPod, scheduleResult.SuggestedHost, state)
 		if err != nil {
 			metrics.PodScheduleError(fwk.ProfileName(), metrics.SinceInSeconds(start))

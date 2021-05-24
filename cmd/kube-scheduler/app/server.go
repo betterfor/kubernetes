@@ -188,12 +188,14 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 		}
 	}
 
+	// 运行informer同步资源
 	// Start all informers.
 	cc.InformerFactory.Start(ctx.Done())
 
 	// Wait for all caches to sync before scheduling.
 	cc.InformerFactory.WaitForCacheSync(ctx.Done())
 
+	// 领导者选举实例化
 	// If leader election is enabled, runCommand via LeaderElector until done and exit.
 	if cc.LeaderElection != nil {
 		cc.LeaderElection.Callbacks = leaderelection.LeaderCallbacks{
